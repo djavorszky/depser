@@ -72,7 +72,7 @@ func (d *Dependency) Add(depender, dependent string) error {
 func (d *Dependency) checkCycles(depender string) error {
 	seen := make(map[string]struct{})
 
-	return d.check("start", depender, seen)
+	return d.check(depender, depender, seen)
 }
 
 func (d *Dependency) check(route, depender string, seen map[string]struct{}) error {
@@ -81,15 +81,21 @@ func (d *Dependency) check(route, depender string, seen map[string]struct{}) err
 	d.depRW.RUnlock()
 
 	for _, dep := range dependents {
-		route += fmt.Sprintf(" -> %s", dep)
 		if _, ok := seen[dep]; ok {
 			return fmt.Errorf("dependency cycle detected: %v", route)
 		}
 
 		seen[dep] = struct{}{}
 
-		return d.check(route, dep, seen)
+		depRoute := fmt.Sprintf("%s -> %s", route, dep)
+
+		err := d.check(depRoute, dep, seen)
+		if err != nil {
+			return err
+		}
 	}
+
+	delete(seen, depender)
 
 	return nil
 }
@@ -138,4 +144,14 @@ func (d *Dependency) mustAddVisibility(stalked, stalker string) {
 	stalkers = append(stalkers, stalker)
 
 	d.visibilities[stalked] = stalkers
+}
+
+// PrintDependencies logs out all the dependencies to stdout.
+func (d *Dependency) PrintDependencies() {
+	for depender, dependents := range d.deps {
+		fmt.Println(depender)
+		for _, dependent := range dependents {
+			fmt.Printf("\t%s\n", dependent)
+		}
+	}
 }

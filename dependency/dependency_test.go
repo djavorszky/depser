@@ -157,6 +157,7 @@ func TestDependency_checkCycles(t *testing.T) {
 
 		{"Direct cycle", "a", []args{args{"a", "b"}, args{"b", "a"}}, true},
 		{"Indirect cycle", "a", []args{args{"a", "b"}, args{"b", "c"}, args{"c", "a"}}, true},
+		{"Long cycle", "a", []args{args{"a", "b"}, args{"b", "c"}, args{"c", "d"}, args{"d", "e"}, args{"e", "f"}, args{"f", "a"}}, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
