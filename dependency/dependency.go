@@ -60,6 +60,37 @@ func (d *Dependency) Add(depender, dependent string) error {
 	d.mustAddVisibility(dependent, depender)
 	d.visRW.Unlock()
 
+	if d.allowCycles {
+		return nil
+	}
+
+	return d.checkCycles(depender)
+}
+
+// checkCycles checks if there are any dependency cycles starting
+// from depender
+func (d *Dependency) checkCycles(depender string) error {
+	seen := make(map[string]struct{})
+
+	return d.check("start", depender, seen)
+}
+
+func (d *Dependency) check(route, depender string, seen map[string]struct{}) error {
+	d.depRW.RLock()
+	dependents := d.deps[depender]
+	d.depRW.RUnlock()
+
+	for _, dep := range dependents {
+		route += fmt.Sprintf(" -> %s", dep)
+		if _, ok := seen[dep]; ok {
+			return fmt.Errorf("dependency cycle detected: %v", route)
+		}
+
+		seen[dep] = struct{}{}
+
+		return d.check(route, dep, seen)
+	}
+
 	return nil
 }
 

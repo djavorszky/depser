@@ -53,29 +53,30 @@ func TestDependency_Add(t *testing.T) {
 	type args struct {
 		depender  string
 		dependent string
+		wantErr   bool
 	}
 	tests := []struct {
-		name    string
-		args    []args
-		wantErr bool
+		name string
+		args []args
 	}{
-		{"First", []args{args{"First", "dependee"}}, false},
-		{"Two runs", []args{args{"Two runs", "dependee1"}, args{"Two runs", "dependee2"}}, false},
-		{"Three runs", []args{args{"Three runs", "dependee1"}, args{"Three runs", "dependee2"}, args{"Three runs", "dependee3"}}, false},
+		{"First", []args{args{"First", "dependee", false}}},
+		{"Two runs", []args{args{"Two runs", "dependee1", false}, args{"Two runs", "dependee2", false}}},
+		{"Three runs", []args{args{"Three runs", "dependee1", false}, args{"Three runs", "dependee2", false}, args{"Three runs", "dependee3", false}}},
 
-		{"Missing dependent", []args{args{"", "dependee"}}, true},
-		{"Missing dependee", []args{args{"First", ""}}, true},
+		{"Missing dependent", []args{args{"", "dependee", true}}},
+		{"Missing dependee", []args{args{"First", "", true}}},
+		{"Dependency cycle", []args{args{"a", "b", false}, args{"b", "a", true}}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			d := New()
 			for _, depTest := range tt.args {
-				if err := d.Add(depTest.depender, depTest.dependent); (err != nil) != tt.wantErr {
-					t.Errorf("Dependency.Add() error = %v, wantErr %v", err, tt.wantErr)
+				if err := d.Add(depTest.depender, depTest.dependent); (err != nil) != depTest.wantErr {
+					t.Errorf("Dependency.Add() error = %v, wantErr %v", err, depTest.wantErr)
 					return
 				}
 
-				if tt.wantErr {
+				if depTest.wantErr {
 					return
 				}
 			}
@@ -136,6 +137,35 @@ func TestDependency_mustAddVisibility(t *testing.T) {
 			actualLen := len(d.visibilities[tt.name])
 			if actualLen != len(tt.args) {
 				t.Errorf("length of resulting visibility list is not as expected. Expected: %d, actual: %d", len(tt.args), actualLen)
+			}
+		})
+	}
+}
+
+func TestDependency_checkCycles(t *testing.T) {
+	type args struct {
+		depender  string
+		dependent string
+	}
+	tests := []struct {
+		name     string
+		depender string
+		args     []args
+		wantErr  bool
+	}{
+		{"Works", "a", []args{args{"a", "b"}, args{"b", "c"}}, false},
+
+		{"Direct cycle", "a", []args{args{"a", "b"}, args{"b", "a"}}, true},
+		{"Indirect cycle", "a", []args{args{"a", "b"}, args{"b", "c"}, args{"c", "a"}}, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := New()
+			for _, arg := range tt.args {
+				d.mustAddDependency(arg.depender, arg.dependent)
+			}
+			if err := d.checkCycles(tt.depender); (err != nil) != tt.wantErr {
+				t.Errorf("Dependency.checkCycles() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
 	}
