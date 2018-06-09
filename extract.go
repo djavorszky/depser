@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -31,6 +32,10 @@ func extractImportFrom(r io.Reader) ([]string, error) {
 
 		if strings.HasPrefix(line, "import ") {
 			imports = append(imports, mustParseImport(line))
+		}
+
+		if strings.HasPrefix(line, "public") || strings.HasPrefix(line, "class") {
+			break
 		}
 	}
 
@@ -72,4 +77,18 @@ func extractPackageFrom(r io.Reader) (string, error) {
 	}
 
 	return pkg, nil
+}
+
+func extractFQCN(path string) (string, error) {
+	const op = "extractFQCN"
+
+	pkg, err := extractPackage(path)
+	if err != nil {
+		return "", fmt.Errorf("%v: failed extract from %s: %v", op, path, err)
+	}
+
+	_, fileName := filepath.Split(path)
+	class := strings.Split(fileName, ".")[0]
+
+	return fmt.Sprintf("%s.%s", pkg, class), nil
 }

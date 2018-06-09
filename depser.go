@@ -2,34 +2,50 @@ package depser
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+
+	"github.com/djavorszky/depser/dependency"
 )
 
-// Hello is the entrypoint
-func Hello() {
-	srcs := []string{
-		"/Users/javdaniel/git/liferay-support-ee/tools/environment-setup/LiferayUp/src/com",
-		"/Users/javdaniel/git/liferay-support-ee/tools/environment-setup/LiferayUp/src/hu",
-	}
+var (
+	dep  *dependency.Dependency
+	errs []error
+)
+
+// BuildDependencies walks through all of the paths to build up a dependency tree
+func BuildDependencies(roots []string) error {
+	dep = dependency.New()
 
 	var wg sync.WaitGroup
 
-	wg.Add(len(srcs))
-	for _, src := range srcs {
-		go walkPath(src, walker, &wg)
+	wg.Add(len(roots))
+	for _, root := range roots {
+		go walkPath(root, walker, &wg)
 	}
 
 	wg.Wait()
+
+	if len(errs) != 0 {
+		var errMsg string
+		for _, err := range errs {
+			errMsg = fmt.Sprintf("%s && %v", errMsg, err)
+		}
+
+		errMsg = strings.TrimPrefix(errMsg, " && ")
+
+		return fmt.Errorf(errMsg)
+	}
+
+	return nil
 }
 
 func walkPath(path string, walker filepath.WalkFunc, wg *sync.WaitGroup) {
 	err := filepath.Walk(path, walker)
 	if err != nil {
-		log.Printf("error walking the path %q: %v", path, err)
+		errs = append(errs, fmt.Errorf("path %q: %v", path, err))
 	}
 
 	wg.Done()
@@ -43,22 +59,30 @@ func walker(path string, info os.FileInfo, err error) error {
 	}
 
 	if info.IsDir() {
-		log.Printf("visited folder: %q", path)
+		//log.Printf("visited folder: %q", path)
 		return nil
 	}
 
 	if !strings.HasSuffix(info.Name(), ".java") {
-		log.Printf("visited non-java file: %v", info.Name())
+		//log.Printf("visited non-java file: %v", info.Name())
 		return nil
+	}
+
+	fqcn, err := extractFQCN(path)
+	if err != nil {
+		return fmt.Errorf("FQCN extract: %v", err)
 	}
 
 	imports, err := extractImports(path)
 	if err != nil {
-		return fmt.Errorf("%v: extract failed: %v", op, err)
+		return fmt.Errorf("%v: extract imports failed: %v", op, err)
 	}
 
 	for _, imp := range imports {
-		log.Printf("Import: %q", imp)
+		err := dep.Add(fqcn, imp)
+		if err != nil {
+			return fmt.Errorf("failed adding dependency: %v", err)
+		}
 	}
 
 	return nil
