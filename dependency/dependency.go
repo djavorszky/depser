@@ -26,13 +26,20 @@ func New() *Dependency {
 // NewWithCycles returns a Dependency struct in which you can
 // decide whether to allow dependency cycles or not.
 func NewWithCycles(allowCycles bool) *Dependency {
-	dependency := &Dependency{
+	var (
+		dep sync.RWMutex
+		vis sync.RWMutex
+	)
+
+	dependency := Dependency{
 		allowCycles:  allowCycles,
 		deps:         make(map[string][]string),
 		visibilities: make(map[string][]string),
+		depRW:        &dep,
+		visRW:        &vis,
 	}
 
-	return dependency
+	return &dependency
 }
 
 // Add adds a new dependency to the dependent, as well
@@ -42,7 +49,9 @@ func (d *Dependency) Add(dependent, dependee string) error {
 		return fmt.Errorf("empty dependant or dependee")
 	}
 
+	d.depRW.Lock()
 	d.mustAddDependency(dependent, dependee)
+	d.depRW.Unlock()
 
 	return nil
 }
