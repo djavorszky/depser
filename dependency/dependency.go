@@ -14,6 +14,9 @@ type Dependency struct {
 	visRW        *sync.RWMutex
 	visibilities map[string][]string
 	allowCycles  bool
+
+	knownRW      *sync.RWMutex
+	knownCyclers map[string]struct{}
 }
 
 // New returns a ready-to-use Dependency struct. By default it is
@@ -27,16 +30,19 @@ func New() *Dependency {
 // decide whether to allow dependency cycles or not.
 func NewWithCycles(allowCycles bool) *Dependency {
 	var (
-		dep sync.RWMutex
-		vis sync.RWMutex
+		dep   sync.RWMutex
+		vis   sync.RWMutex
+		known sync.RWMutex
 	)
 
 	dependency := Dependency{
 		allowCycles:  allowCycles,
 		deps:         make(map[string][]string),
 		visibilities: make(map[string][]string),
+		knownCyclers: make(map[string]struct{}),
 		depRW:        &dep,
 		visRW:        &vis,
+		knownRW:      &known,
 	}
 
 	return &dependency
@@ -67,6 +73,28 @@ func (d *Dependency) Add(depender, dependent string) error {
 	return d.checkCycles(depender)
 }
 
+// CheckCyclicDependencies checks to see if there are any cyclic dependencies.
+// If there are, it will return them as a slice of strings.
+//
+// Boolean is set to true if no cyclic dependencies are found, and false
+// if there are at least 1.
+func (d *Dependency) CheckCyclicDependencies() ([]string, bool) {
+	var (
+		ok     bool
+		cycles []string
+	)
+
+	for root := range d.deps {
+		err := d.checkCycles(root)
+		if err != nil {
+			ok = false
+			cycles = append(cycles, err.Error())
+		}
+	}
+
+	return cycles, ok
+}
+
 // checkCycles checks if there are any dependency cycles starting
 // from depender
 func (d *Dependency) checkCycles(depender string) error {
@@ -81,13 +109,24 @@ func (d *Dependency) check(route, depender string, seen map[string]struct{}) err
 	d.depRW.RUnlock()
 
 	for _, dep := range dependents {
+		depRoute := fmt.Sprintf("%s -> %s", route, dep)
+
+		d.knownRW.RLock()
+		if _, ok := d.knownCyclers[dep]; ok {
+			d.knownRW.RUnlock()
+			continue
+		}
+		d.knownRW.RUnlock()
+
 		if _, ok := seen[dep]; ok {
-			return fmt.Errorf("dependency cycle detected: %v", route)
+			d.knownRW.Lock()
+			d.knownCyclers[dep] = struct{}{}
+			d.knownRW.Unlock()
+
+			return fmt.Errorf(depRoute)
 		}
 
 		seen[dep] = struct{}{}
-
-		depRoute := fmt.Sprintf("%s -> %s", route, dep)
 
 		err := d.check(depRoute, dep, seen)
 		if err != nil {

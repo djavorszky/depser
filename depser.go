@@ -16,8 +16,8 @@ var (
 )
 
 // BuildDependencies walks through all of the paths to build up a dependency tree
-func BuildDependencies(roots []string) error {
-	dep = dependency.New()
+func BuildDependencies(allowCycles bool, roots []string) (*dependency.Dependency, error) {
+	dep = dependency.NewWithCycles(allowCycles)
 
 	var wg sync.WaitGroup
 
@@ -36,10 +36,10 @@ func BuildDependencies(roots []string) error {
 
 		errMsg = strings.TrimPrefix(errMsg, " && ")
 
-		return fmt.Errorf(errMsg)
+		return nil, fmt.Errorf(errMsg)
 	}
 
-	return nil
+	return dep, nil
 }
 
 func walkPath(path string, walker filepath.WalkFunc, wg *sync.WaitGroup) {

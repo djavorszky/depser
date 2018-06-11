@@ -13,9 +13,16 @@ func main() {
 		os.Exit(1)
 	}
 
-	err := depser.BuildDependencies(os.Args[1:])
+	dep, err := depser.BuildDependencies(true, os.Args[1:])
 	if err != nil {
 		fmt.Printf("failed building dependencies: %v\n", err)
 	}
 
+	cyclics, ok := dep.CheckCyclicDependencies()
+	if !ok {
+		fmt.Printf("%d dependency cycle(s) detected:\n", len(cyclics))
+		for _, cycle := range cyclics {
+			fmt.Println(cycle)
+		}
+	}
 }
