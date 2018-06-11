@@ -2,6 +2,7 @@ package dependency
 
 import (
 	"fmt"
+	"sort"
 	"sync"
 )
 
@@ -15,8 +16,8 @@ type Dependency struct {
 	visibilities map[string][]string
 	allowCycles  bool
 
-	knownRW      *sync.RWMutex
-	knownCyclers map[string]struct{}
+	knownCyclers sync.Map
+	cyclicDeps   sync.Map
 }
 
 // New returns a ready-to-use Dependency struct. By default it is
@@ -30,19 +31,16 @@ func New() *Dependency {
 // decide whether to allow dependency cycles or not.
 func NewWithCycles(allowCycles bool) *Dependency {
 	var (
-		dep   sync.RWMutex
-		vis   sync.RWMutex
-		known sync.RWMutex
+		dep sync.RWMutex
+		vis sync.RWMutex
 	)
 
 	dependency := Dependency{
 		allowCycles:  allowCycles,
 		deps:         make(map[string][]string),
 		visibilities: make(map[string][]string),
-		knownCyclers: make(map[string]struct{}),
 		depRW:        &dep,
 		visRW:        &vis,
-		knownRW:      &known,
 	}
 
 	return &dependency
@@ -79,20 +77,30 @@ func (d *Dependency) Add(depender, dependent string) error {
 // Boolean is set to true if no cyclic dependencies are found, and false
 // if there are at least 1.
 func (d *Dependency) CheckCyclicDependencies() ([]string, bool) {
-	var (
-		ok     bool
-		cycles []string
-	)
-
+	var sortableDeps []string
 	for root := range d.deps {
-		err := d.checkCycles(root)
-		if err != nil {
-			ok = false
-			cycles = append(cycles, err.Error())
-		}
+		sortableDeps = append(sortableDeps, root)
 	}
 
-	return cycles, ok
+	sort.Strings(sortableDeps)
+
+	var wg sync.WaitGroup
+	wg.Add(len(sortableDeps))
+	for _, root := range sortableDeps {
+		go d.checkCyclesAsync(root, &wg)
+	}
+
+	wg.Wait()
+
+	var cycles []string
+
+	d.cyclicDeps.Range(func(key, value interface{}) bool {
+		cycles = append(cycles, key.(string))
+
+		return true
+	})
+
+	return cycles, len(cycles) == 0
 }
 
 // checkCycles checks if there are any dependency cycles starting
@@ -103,25 +111,35 @@ func (d *Dependency) checkCycles(depender string) error {
 	return d.check(depender, depender, seen)
 }
 
+// checkCyclesAsync checks if there are any dependency cycles starting
+// from depender. It is meant to run in an asynchronous manner.
+func (d *Dependency) checkCyclesAsync(depender string, wg *sync.WaitGroup) {
+	seen := make(map[string]struct{})
+
+	err := d.check(depender, depender, seen)
+	if err != nil {
+		d.cyclicDeps.Store(err.Error(), struct{}{})
+	}
+
+	wg.Done()
+}
+
 func (d *Dependency) check(route, depender string, seen map[string]struct{}) error {
 	d.depRW.RLock()
 	dependents := d.deps[depender]
 	d.depRW.RUnlock()
 
+	sort.Strings(dependents)
+
 	for _, dep := range dependents {
 		depRoute := fmt.Sprintf("%s -> %s", route, dep)
 
-		d.knownRW.RLock()
-		if _, ok := d.knownCyclers[dep]; ok {
-			d.knownRW.RUnlock()
+		if _, ok := d.knownCyclers.Load(dep); ok {
 			continue
 		}
-		d.knownRW.RUnlock()
 
 		if _, ok := seen[dep]; ok {
-			d.knownRW.Lock()
-			d.knownCyclers[dep] = struct{}{}
-			d.knownRW.Unlock()
+			d.knownCyclers.Store(dep, struct{}{})
 
 			return fmt.Errorf(depRoute)
 		}
