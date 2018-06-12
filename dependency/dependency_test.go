@@ -171,3 +171,90 @@ func TestDependency_checkCycles(t *testing.T) {
 		})
 	}
 }
+
+func Test_trimToCycle(t *testing.T) {
+	type args struct {
+		cycle    string
+		offender string
+	}
+	tests := []struct {
+		name    string
+		args    args
+		want    string
+		wantErr bool
+	}{
+		{
+			"double",
+			args{
+				"com.liferay.portal.tools.theme.builder.ThemeBuilder -> com.liferay.portal.tools.theme.builder.internal.util.FileUtil -> com.liferay.portal.tools.theme.builder.ThemeBuilder -> com.liferay.portal.tools.theme.builder.internal.util.FileUtil",
+				"com.liferay.portal.tools.theme.builder.internal.util.FileUtil",
+			},
+			"com.liferay.portal.tools.theme.builder.internal.util.FileUtil -> com.liferay.portal.tools.theme.builder.ThemeBuilder -> com.liferay.portal.tools.theme.builder.internal.util.FileUtil",
+			false,
+		},
+		{
+			"double_2",
+			args{
+				"com.liferay.portal.tools.theme.builder.ThemeBuilder -> com.liferay.portal.tools.theme.builder.internal.util.FileUtil -> com.liferay.portal.tools.theme.builder.ThemeBuilder -> com.liferay.portal.tools.theme.builder.internal.util.FileUtil",
+				"com.liferay.portal.tools.theme.builder.ThemeBuilder",
+			},
+			"com.liferay.portal.tools.theme.builder.ThemeBuilder -> com.liferay.portal.tools.theme.builder.internal.util.FileUtil -> com.liferay.portal.tools.theme.builder.ThemeBuilder",
+			false,
+		},
+		{
+			"long",
+			args{
+				"com.liferay.adaptive.media.document.library.web.internal.optimizer.test.DLAMImageOptimizerTest -> com.liferay.portal.test.rule.LiferayIntegrationTestRule -> com.liferay.portal.test.rule.callback.MainServletTestCallback -> com.liferay.portal.servlet.MainServlet -> com.liferay.portal.events.StartupAction -> com.liferay.portal.kernel.resiliency.mpi.MPIHelperUtil -> com.liferay.portal.kernel.resiliency.spi.SPI -> com.liferay.portal.kernel.resiliency.spi.agent.SPIAgent -> com.liferay.portal.kernel.resiliency.spi.SPI",
+				"com.liferay.portal.kernel.resiliency.spi.SPI",
+			},
+			"com.liferay.portal.kernel.resiliency.spi.SPI -> com.liferay.portal.kernel.resiliency.spi.agent.SPIAgent -> com.liferay.portal.kernel.resiliency.spi.SPI",
+			false,
+		},
+		{
+			"special",
+			args{
+				"${package}.content.targeting.report.__className__Report -> com.liferay.portal.kernel.util.ParamUtil -> com.liferay.portal.kernel.service.ServiceContext -> com.liferay.portal.kernel.util.PortalUtil -> com.liferay.expando.kernel.model.ExpandoBridge -> com.liferay.portal.kernel.service.ServiceContext",
+				"com.liferay.portal.kernel.service.ServiceContext",
+			},
+			"com.liferay.portal.kernel.service.ServiceContext -> com.liferay.portal.kernel.util.PortalUtil -> com.liferay.expando.kernel.model.ExpandoBridge -> com.liferay.portal.kernel.service.ServiceContext",
+			false,
+		},
+		{
+			"special_long",
+			args{
+				"${package}.application.list.__className__PanelCategory -> com.liferay.application.list.BasePanelCategory -> com.liferay.application.list.display.context.logic.PanelCategoryHelper -> com.liferay.application.list.PanelAppRegistry -> com.liferay.portal.kernel.portlet.PortletPreferencesFactory -> com.liferay.portal.kernel.theme.ThemeDisplay -> com.liferay.exportimport.kernel.staging.StagingUtil -> com.liferay.exportimport.kernel.lar.PortletDataContext -> com.liferay.portal.kernel.model.ClassedModel -> com.liferay.expando.kernel.model.ExpandoBridge -> com.liferay.portal.kernel.service.ServiceContext -> com.liferay.portal.kernel.portlet.PortletPreferencesFactoryUtil -> com.liferay.portal.kernel.theme.ThemeDisplay",
+				"com.liferay.portal.kernel.theme.ThemeDisplay",
+			},
+			"com.liferay.portal.kernel.theme.ThemeDisplay -> com.liferay.exportimport.kernel.staging.StagingUtil -> com.liferay.exportimport.kernel.lar.PortletDataContext -> com.liferay.portal.kernel.model.ClassedModel -> com.liferay.expando.kernel.model.ExpandoBridge -> com.liferay.portal.kernel.service.ServiceContext -> com.liferay.portal.kernel.portlet.PortletPreferencesFactoryUtil -> com.liferay.portal.kernel.theme.ThemeDisplay",
+			false,
+		},
+
+		{
+			"nothing_to_do",
+			args{
+				"com.liferay.portal.tools.theme.builder.ThemeBuilder -> com.liferay.portal.tools.theme.builder.internal.util.FileUtil -> com.liferay.portal.tools.theme.builder.ThemeBuilder",
+				"com.liferay.portal.tools.theme.builder.ThemeBuilder",
+			},
+			"com.liferay.portal.tools.theme.builder.ThemeBuilder -> com.liferay.portal.tools.theme.builder.internal.util.FileUtil -> com.liferay.portal.tools.theme.builder.ThemeBuilder",
+			false,
+		},
+
+		{"missing_cycle", args{"", "com.liferay.portal.kernel.theme.ThemeDisplay"}, "", true},
+
+		{"missing_offender", args{"com.liferay.portal.kernel.service.ServiceContext -> com.liferay.portal.kernel.util.PortalUtil -> com.liferay.expando.kernel.model.ExpandoBridge -> com.liferay.portal.kernel.service.ServiceContext", ""}, "", true},
+
+		{"offender_not_found", args{"com.liferay.portal.tools.theme.builder.ThemeBuilder -> com.liferay.portal.tools.theme.builder.internal.util.FileUtil -> com.liferay.portal.tools.theme.builder.ThemeBuilder", "com.liferay.portal.kernel.theme.ThemeDisplay"}, "", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := trimToCycle(tt.args.cycle, tt.args.offender)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("trimToCycle() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if got != tt.want {
+				t.Errorf("trimToCycle() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

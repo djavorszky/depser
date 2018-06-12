@@ -3,6 +3,7 @@ package dependency
 import (
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 )
 
@@ -131,9 +132,7 @@ func (d *Dependency) check(route, depender string, seen map[string]struct{}) err
 	d.depRW.RUnlock()
 
 	sort.Strings(dependents)
-
 	for _, dep := range dependents {
-
 		if _, ok := d.knownCyclers.Load(dep); ok {
 			continue
 		}
@@ -141,9 +140,10 @@ func (d *Dependency) check(route, depender string, seen map[string]struct{}) err
 		depRoute := fmt.Sprintf("%s -> %s", route, dep)
 
 		if _, ok := seen[dep]; ok {
+
 			// double check
 			if _, loaded := d.knownCyclers.LoadOrStore(dep, struct{}{}); !loaded {
-				return fmt.Errorf(depRoute)
+				return fmt.Errorf(mustTrimToCycle(depRoute, dep))
 			}
 
 			continue
@@ -208,12 +208,24 @@ func (d *Dependency) mustAddVisibility(stalked, stalker string) {
 	d.visibilities[stalked] = stalkers
 }
 
-// PrintDependencies logs out all the dependencies to stdout.
-func (d *Dependency) PrintDependencies() {
-	for depender, dependents := range d.deps {
-		fmt.Println(depender)
-		for _, dependent := range dependents {
-			fmt.Printf("\t%s\n", dependent)
-		}
+func trimToCycle(cycle, offender string) (string, error) {
+	if cycle == "" || offender == "" {
+		return "", fmt.Errorf("cycle or offender is empty")
 	}
+
+	ind := strings.Index(cycle, offender)
+	if ind == -1 {
+		return "", fmt.Errorf("not found in cycle: %s", offender)
+	}
+
+	return cycle[ind:], nil
+}
+
+func mustTrimToCycle(cycle, offender string) string {
+	res, err := trimToCycle(cycle, offender)
+	if err != nil {
+		panic(err)
+	}
+
+	return res
 }

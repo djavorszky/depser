@@ -49,8 +49,7 @@ func parsePackage(line string) (string, error) {
 		return "", fmt.Errorf("%v: line too short to be valid: %s", op, line)
 	}
 
-	// Remove the "package " from the beginning
-	// and the semicolon at the end.
+	// Remove the "package " from the beginning and the semicolon at the end.
 	return line[8 : len(line)-1], nil
 }
 
