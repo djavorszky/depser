@@ -218,7 +218,9 @@ func trimToCycle(cycle, offender string) (string, error) {
 		return "", fmt.Errorf("not found in cycle: %s", offender)
 	}
 
-	return cycle[ind:], nil
+	lastInd := strings.LastIndex(cycle, offender)
+
+	return cycle[ind : lastInd+len(offender)], nil
 }
 
 func mustTrimToCycle(cycle, offender string) string {
