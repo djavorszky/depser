@@ -49,11 +49,11 @@ func main() {
 	cyclics, ok := dep.CheckCyclicDependencies()
 	if !ok {
 		fmt.Printf("%d dependency cycle(s) detected:\n", len(cyclics))
-		/*
-			for _, cycle := range cyclics {
-				fmt.Println(cycle)
-			}
-		*/
+
+		for _, cycle := range cyclics {
+			fmt.Println(cycle)
+		}
+
 	}
 
 	fmt.Printf("Cyclic dependency check done in %s\n", time.Since(start))

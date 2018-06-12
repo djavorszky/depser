@@ -85,9 +85,10 @@ func (d *Dependency) CheckCyclicDependencies() ([]string, bool) {
 	sort.Strings(sortableDeps)
 
 	var wg sync.WaitGroup
+
 	wg.Add(len(sortableDeps))
 	for _, root := range sortableDeps {
-		go d.checkCyclesAsync(root, &wg)
+		d.checkCyclesAsync(root, &wg)
 	}
 
 	wg.Wait()
@@ -132,16 +133,20 @@ func (d *Dependency) check(route, depender string, seen map[string]struct{}) err
 	sort.Strings(dependents)
 
 	for _, dep := range dependents {
-		depRoute := fmt.Sprintf("%s -> %s", route, dep)
 
 		if _, ok := d.knownCyclers.Load(dep); ok {
 			continue
 		}
 
-		if _, ok := seen[dep]; ok {
-			d.knownCyclers.Store(dep, struct{}{})
+		depRoute := fmt.Sprintf("%s -> %s", route, dep)
 
-			return fmt.Errorf(depRoute)
+		if _, ok := seen[dep]; ok {
+			// double check
+			if _, loaded := d.knownCyclers.LoadOrStore(dep, struct{}{}); !loaded {
+				return fmt.Errorf(depRoute)
+			}
+
+			continue
 		}
 
 		seen[dep] = struct{}{}
